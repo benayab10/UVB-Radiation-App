@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>UVB Comparison Tool</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* ... (styles remain unchanged) ... */
+    </style>
+</head>
+<body>
+    <h1>US UVB Comparison Tool</h1>
+    <div class="input-group">
+        <label for="zip1">Enter first US zip code:</label>
+        <input type="text" id="zip1">
+    </div>
+    <div class="input-group">
+        <label for="zip2">Enter second US zip code (optional):</label>
+        <input type="text" id="zip2">
+    </div>
+    <button id="compareButton" onclick="compareZipCodes()">See Data</button>
+    <div id="results"></div>
+    <canvas id="uvbFluxChart"></canvas>
+    <canvas id="daysOverThreeChart"></canvas>
+
+    <script>
+        const DATA_YEAR = 2024;
+        let savedZip1 = null;
+        let uvbFluxChartInstance = null;
+        let daysOverThreeChartInstance = null;
+
+        const zipDatabase = {
+            "90210": ["Beverly Hills, CA", 34.0901, -118.4065],
+            "10001": ["New York, NY", 40.7506, -73.9971],
+            "60601": ["Chicago, IL", 41.8850, -87.6249],
+            "33139": ["Miami Beach, FL", 25.7826, -80.1341],
+            "98101": ["Seattle, WA", 47.6101, -122.3359],
+            "20001": ["Washington, D.C.", 38.9106, -77.0210],
+        };
+
+        function generateUVBData(latitude, longitude) {
+            const baseFlux = [20, 35, 55, 75, 95, 110, 105, 90, 70, 45, 25, 15];
+            const baseDaysOverThree = [5, 10, 15, 20, 25, 28, 30, 28, 25, 20, 10, 5];
+
+            const latitudeFactor = 1 - (Math.abs(latitude) / 90) * 0.5;
+            let adjustedFlux = baseFlux.map(flux => Math.floor(flux * latitudeFactor));
+            let adjustedDaysOverThree = baseDaysOverThree.map(days => Math.floor(days * latitudeFactor));
+
+            const longitudeFactor = 1 + (Math.sin(longitude * Math.PI / 180) * 0.1);
+            adjustedFlux = adjustedFlux.map(flux => Math.floor(flux * longitudeFactor));
+            adjustedDaysOverThree = adjustedDaysOverThree.map(days => Math.floor(days * longitudeFactor));
+
+            adjustedFlux = adjustedFlux.map(flux => Math.max(0, flux + Math.floor(Math.random() * 11) - 5));
+            adjustedDaysOverThree = adjustedDaysOverThree.map(days => Math.max(0, days + Math.floor(Math.random() * 5) - 2));
+
+            return {
+                uvbFlux: adjustedFlux,
+                daysOverThree: adjustedDaysOverThree
+            };
+        }
+
+        function compareZipCodes() {
+            const zip1 = document.getElementById('zip1').value;
+            const zip2 = document.getElementById('zip2').value;
+
+            if (zipDatabase[zip1]) {
+                const [name1, lat1, lon1] = zipDatabase[zip1];
+                const data1 = generateUVBData(lat1, lon1);
+                
+                if (zip2 && zipDatabase[zip2]) {
+                    const [name2, lat2, lon2] = zipDatabase[zip2];
+                    const data2 = generateUVBData(lat2, lon2);
+                    displayResults(data1, data2, zip1, zip2, name1, name2, lat1, lon1, lat2, lon2);
+                } else {
+                    displaySingleResult(data1, zip1, name1, lat1, lon1);
+                    savedZip1 = { zip1, name1, lat1, lon1, data1 };
+                    document.getElementById('compareButton').innerText = "Compare with another zip code";
+                }
+            } else {
+                document.getElementById('results').innerHTML = "Zip code not found in the database. Please try again.";
+            }
+        }
+
+        function displayResults(data1, data2, zip1, zip2, name1, name2, lat1, lon1, lat2, lon2) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <h2>Data for year: ${DATA_YEAR}</h2>
+                <p>${name1} (${zip1})<br>Latitude: ${lat1.toFixed(2)}, Longitude: ${lon1.toFixed(2)}</p>
+                <p>${name2} (${zip2})<br>Latitude: ${lat2.toFixed(2)}, Longitude: ${lon2.toFixed(2)}</p>
+            `;
+
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+            if (uvbFluxChartInstance) {
+                uvbFluxChartInstance.destroy();
+            }
+
+            const uvbFluxCtx = document.getElementById('uvbFluxChart').getContext('2d');
+            uvbFluxChartInstance = new Chart(uvbFluxCtx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: `${name1} (${zip1})`,
+                            data: data1.uvbFlux,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1
+                        },
+                        {
+                            label: `${name2} (${zip2})`,
+                            data: data2.uvbFlux,
+                            borderColor: 'rgb(255, 99, 132)',
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `UVB Flux Comparison (${DATA_YEAR})`
+                        }
+                    },
+                    scales: {
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'UVB Flux (RB)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (daysOverThreeChartInstance) {
+                daysOverThreeChartInstance.destroy();
+            }
+
+            const daysOverThreeCtx = document.getElementById('daysOverThreeChart').getContext('2d');
+            daysOverThreeChartInstance = new Chart(daysOverThreeCtx, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: `${name1} (${zip1})`,
+                            data: data1.daysOverThree,
+                            backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                        },
+                        {
+                            label: `${name2} (${zip2})`,
+                            data: data2.daysOverThree,
+                            backgroundColor: 'rgba(255, 99, 132, 0.6)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Monthly Days with UV Index over 3 (${DATA_YEAR})`
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 31,
+                            ticks: {
+                                stepSize: 5
+                            },
+                            title: {
+                                display: true,
+                                text: 'Number of Days'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function displaySingleResult(data, zip, name, lat, lon) {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <h2>Data for year: ${DATA_YEAR}</h2>
+                <p>${name} (${zip})<br>Latitude: ${lat.toFixed(2)}, Longitude: ${lon.toFixed(2)}</p>
+            `;
+
+            const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+            if (uvbFluxChartInstance) {
+                uvbFluxChartInstance.destroy();
+            }
+
+            const uvbFluxCtx = document.getElementById('uvbFluxChart').getContext('2d');
+            uvbFluxChartInstance = new Chart(uvbFluxCtx, {
+                type: 'line',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: `${name} (${zip})`,
+                            data: data.uvbFlux,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `UVB Flux (${DATA_YEAR})`
+                        }
+                    },
+                    scales: {
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'UVB Flux (RB)'
+                            }
+                        }
+                    }
+                }
+            });
+
+            if (daysOverThreeChartInstance) {
+                daysOverThreeChartInstance.destroy();
+            }
+
+            const daysOverThreeCtx = document.getElementById('daysOverThreeChart').getContext('2d');
+            daysOverThreeChartInstance = new Chart(daysOverThreeCtx, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [{
+                        label: 'Days with UV Index over 3',
+                        data: data.daysOverThree,
+                        backgroundColor: 'rgba(75, 192, 192, 0.6)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: `Monthly Days with UV Index over 3 (${DATA_YEAR})`
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 31,
+                            ticks: {
+                                stepSize: 5
+                            },
+                            title: {
+                                display: true,
+                                text: 'Number of Days'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    </script>
+</body>
+</html>
